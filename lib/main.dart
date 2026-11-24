@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'dart:convert';
 import 'config.dart';
 import 'utils.dart';
 import 'services/printer_service.dart';
@@ -17,16 +20,14 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'FPN BERKAH JAYA',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
+      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       home: const StartupScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
+// ==================== STARTUP SCREEN ====================
 class StartupScreen extends StatefulWidget {
   const StartupScreen({super.key});
 
@@ -85,6 +86,7 @@ class _StartupScreenState extends State<StartupScreen> {
   }
 }
 
+// ==================== ACTIVATION DIALOG ====================
 class ActivationDialog extends StatefulWidget {
   const ActivationDialog({super.key});
 
@@ -120,14 +122,10 @@ class _ActivationDialogState extends State<ActivationDialog> {
     if (inputCode == correctCode) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('is_activated', true);
-      if (mounted) {
-        Navigator.of(context).pop(true);
-      }
+      if (mounted) Navigator.of(context).pop(true);
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kode aktivasi salah!')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kode aktivasi salah!')));
       }
     }
   }
@@ -146,17 +144,13 @@ class _ActivationDialogState extends State<ActivationDialog> {
               children: [
                 const Text('ID Perangkat: '),
                 Expanded(
-                  child: Text(_isLoading ? "Memuat..." : _machineId,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  child: Text(_isLoading ? "Memuat..." : _machineId, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 IconButton(
                   icon: const Icon(Icons.copy),
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: _machineId));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('ID Perangkat disalin!')),
-                    );
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID Perangkat disalin!')));
                   },
                 )
               ],
@@ -164,29 +158,21 @@ class _ActivationDialogState extends State<ActivationDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _codeController,
-              decoration: const InputDecoration(
-                labelText: 'Kode Aktivasi',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Kode Aktivasi', border: OutlineInputBorder()),
               textCapitalization: TextCapitalization.characters,
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Batal'),
-        ),
-        ElevatedButton(
-          onPressed: _verify,
-          child: const Text('Verifikasi & Aktifkan'),
-        ),
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Batal')),
+        ElevatedButton(onPressed: _verify, child: const Text('Verifikasi & Aktifkan')),
       ],
     );
   }
 }
 
+// ==================== LOGIN DIALOG ====================
 class LoginDialog extends StatefulWidget {
   const LoginDialog({super.key});
 
@@ -201,9 +187,7 @@ class _LoginDialogState extends State<LoginDialog> {
     if (_passwordController.text == AppConfig.password) {
       Navigator.of(context).pop(true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password salah!')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password salah!')));
       _passwordController.clear();
     }
   }
@@ -220,24 +204,17 @@ class _LoginDialogState extends State<LoginDialog> {
           TextField(
             controller: _passwordController,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
             onSubmitted: (_) => _checkPassword(),
           ),
         ],
       ),
-      actions: [
-        ElevatedButton(
-          onPressed: _checkPassword,
-          child: const Text('Masuk'),
-        ),
-      ],
+      actions: [ElevatedButton(onPressed: _checkPassword, child: const Text('Masuk'))],
     );
   }
 }
 
+// ==================== MAIN SCREEN ====================
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -248,11 +225,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _pages = const [
-    BbmScreen(),
-    TokoScreen(),
-    SettingsScreen(),
-  ];
+  final List<Widget> _pages = const [BbmScreen(), TokoScreen(), SettingsScreen()];
 
   @override
   Widget build(BuildContext context) {
@@ -308,6 +281,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
+// ==================== BBM SCREEN ====================
 class BbmScreen extends StatefulWidget {
   const BbmScreen({super.key});
 
@@ -325,20 +299,49 @@ class _BbmScreenState extends State<BbmScreen> {
   final _jenisController = TextEditingController(text: "PERTALITE");
   final _volController = TextEditingController();
   final _nomController = TextEditingController();
-  String _selectedSpbuKode = AppConfig.daftarSpbu.first['kode']!;
+  String _selectedSpbuKode = "";
+  List<Map<String, String>> _daftarSpbu = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tanggalController.text = nowDateStr();
     _jamController.text = nowTimeStr();
+    _loadSpbu();
+  }
+
+  Future<void> _loadSpbu() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedSpbu = prefs.getStringList('daftar_spbu');
+   
+    setState(() {
+      if (savedSpbu != null && savedSpbu.isNotEmpty) {
+        _daftarSpbu = savedSpbu.map((s) {
+          final parts = s.split('|');
+          return {'kode': parts[0], 'nama': parts[1], 'alamat': parts[2], 'harga': parts[3]};
+        }).toList();
+      } else {
+        _daftarSpbu = List<Map<String, String>>.from(AppConfig.defaultDaftarSpbu);
+      }
+     
+      if (_daftarSpbu.isNotEmpty) {
+        _selectedSpbuKode = _daftarSpbu.first['kode']!;
+      }
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveSpbu() async {
+    final prefs = await SharedPreferences.getInstance();
+    final spbuList = _daftarSpbu.map((s) => '${s['kode']}|${s['nama']}|${s['alamat']}|${s['harga']}').toList();
+    await prefs.setStringList('daftar_spbu', spbuList);
+    await prefs.setString('spbu_terpilih', _selectedSpbuKode);
   }
 
   Map<String, String> get _currentSpbu {
-    return AppConfig.daftarSpbu.firstWhere(
-      (s) => s['kode'] == _selectedSpbuKode,
-      orElse: () => AppConfig.daftarSpbu.first
-    );
+    if (_daftarSpbu.isEmpty) return AppConfig.defaultDaftarSpbu.first;
+    return _daftarSpbu.firstWhere((s) => s['kode'] == _selectedSpbuKode, orElse: () => _daftarSpbu.first);
   }
 
   void _isiWaktuSekarang() {
@@ -346,6 +349,88 @@ class _BbmScreenState extends State<BbmScreen> {
       _tanggalController.text = nowDateStr();
       _jamController.text = nowTimeStr();
     });
+  }
+
+  void _tambahSpbu() {
+    final kodeCtrl = TextEditingController();
+    final namaCtrl = TextEditingController();
+    final alamatCtrl = TextEditingController();
+    final hargaCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('➕ Tambah SPBU Baru'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: kodeCtrl, decoration: const InputDecoration(labelText: 'Kode SPBU', border: OutlineInputBorder())),
+              const SizedBox(height: 8),
+              TextField(controller: namaCtrl, decoration: const InputDecoration(labelText: 'Nama SPBU', border: OutlineInputBorder())),
+              const SizedBox(height: 8),
+              TextField(controller: alamatCtrl, decoration: const InputDecoration(labelText: 'Alamat', border: OutlineInputBorder())),
+              const SizedBox(height: 8),
+              TextField(controller: hargaCtrl, decoration: const InputDecoration(labelText: 'Harga Non-Subsidi', border: OutlineInputBorder()), keyboardType: TextInputType.number),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () {
+              if (kodeCtrl.text.isEmpty || namaCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kode dan Nama wajib diisi!')));
+                return;
+              }
+              setState(() {
+                _daftarSpbu.add({
+                  'kode': kodeCtrl.text.trim(),
+                  'nama': namaCtrl.text.trim(),
+                  'alamat': alamatCtrl.text.trim(),
+                  'harga': hargaCtrl.text.trim().replaceAll(RegExp(r'[^0-9]'), ''),
+                });
+                _selectedSpbuKode = kodeCtrl.text.trim();
+              });
+              _saveSpbu();
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SPBU berhasil ditambahkan!')));
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _hapusSpbu() {
+    if (_daftarSpbu.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Minimal harus ada 1 SPBU!')));
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus SPBU?'),
+        content: Text('Yakin ingin menghapus SPBU "${_currentSpbu['nama']}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              setState(() {
+                _daftarSpbu.removeWhere((s) => s['kode'] == _selectedSpbuKode);
+                _selectedSpbuKode = _daftarSpbu.first['kode']!;
+              });
+              _saveSpbu();
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SPBU dihapus!')));
+            },
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _prosesDanPreview() {
@@ -369,6 +454,8 @@ class _BbmScreenState extends State<BbmScreen> {
     int totSub = tanpaSub - nom;
     String g = "-" * AppConfig.lebarKarakter;
 
+    String cashLine = "${"CASH".padRight(24)}${fmt(nom).padLeft(8)}";
+
     String teks = [
       centerText(_selectedSpbuKode, AppConfig.lebarKarakter),
       centerText(_currentSpbu['nama']!, AppConfig.lebarKarakter),
@@ -376,22 +463,22 @@ class _BbmScreenState extends State<BbmScreen> {
       "Shift: ${_shiftController.text}   No. Trans: ${_noTransController.text}",
       "Waktu: ${_tanggalController.text} ${_jamController.text}",
       g,
-      "Pulau/Pompa  : ${_pompaController.text}".padRight(AppConfig.lebarKarakter),
-      "Operator     : ${_operatorController.text}".padRight(AppConfig.lebarKarakter),
-      "Jenis BBM    : ${_jenisController.text}".padRight(AppConfig.lebarKarakter),
-      "Volume       : ${vol.toStringAsFixed(2)} liter".padRight(AppConfig.lebarKarakter),
+      padRight("Pulau/Pompa  : ${_pompaController.text}", AppConfig.lebarKarakter),
+      padRight("Operator     : ${_operatorController.text}", AppConfig.lebarKarakter),
+      padRight("Jenis BBM    : ${_jenisController.text}", AppConfig.lebarKarakter),
+      padRight("Volume       : ${vol.toStringAsFixed(2)} liter", AppConfig.lebarKarakter),
       g,
       "Informasi Harga BBM (Rp/Liter)",
-      "Harga Non Subsidi  : ${fmt(hargaNonSub)}".padRight(AppConfig.lebarKarakter),
-      "Subsidi Pemerintah : ${fmt(subLiter)}".padRight(AppConfig.lebarKarakter),
-      "Harga Jual         : ${fmt(hargaJual)}".padRight(AppConfig.lebarKarakter),
+      padRight("Harga Non Subsidi  : ${fmt(hargaNonSub)}", AppConfig.lebarKarakter),
+      padRight("Subsidi Pemerintah : ${fmt(subLiter)}", AppConfig.lebarKarakter),
+      padRight("Harga Jual         : ${fmt(hargaJual)}", AppConfig.lebarKarakter),
       g,
       "Total Penjualan (Rp)",
-      "Tanpa Subsidi      : ${fmt(tanpaSub)}".padRight(AppConfig.lebarKarakter),
-      "Subsidi Pemerintah : ${fmt(totSub)}".padRight(AppConfig.lebarKarakter),
-      "Dibayar Konsumen   : ${fmt(nom)}".padRight(AppConfig.lebarKarakter),
+      padRight("Tanpa Subsidi      : ${fmt(tanpaSub)}", AppConfig.lebarKarakter),
+      padRight("Subsidi Pemerintah : ${fmt(totSub)}", AppConfig.lebarKarakter),
+      padRight("Dibayar Konsumen   : ${fmt(nom)}", AppConfig.lebarKarakter),
       g,
-      "CASH                       ${fmt(nom).padLeft(8)}",
+      cashLine,
       g,
       "Anda mendapat subsidi dari",
       "Pemerintah sebesar Rp ${fmt(totSub)}",
@@ -402,12 +489,16 @@ class _BbmScreenState extends State<BbmScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => PreviewDialog(teks: teks, namaFile: "bon_${_noTransController.text}.txt"),
+      builder: (context) => PreviewDialog(teks: teks, namaFile: "bon_${_noTransController.text}.txt", pakaiLogo: true),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(appBar: AppBar(title: const Text('Input Data Bon BBM')), body: const Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Input Data Bon BBM')),
       body: SingleChildScrollView(
@@ -421,15 +512,23 @@ class _BbmScreenState extends State<BbmScreen> {
                   child: DropdownButtonFormField<String>(
                     value: _selectedSpbuKode,
                     decoration: const InputDecoration(labelText: 'Pilih SPBU', border: OutlineInputBorder()),
-                    items: AppConfig.daftarSpbu.map((s) => DropdownMenuItem(value: s['kode'], child: Text("${s['kode']} - ${s['nama']}"))).toList(),
+                    items: _daftarSpbu.map((s) => DropdownMenuItem(value: s['kode'], child: Text("${s['kode']} - ${s['nama']}", overflow: TextOverflow.ellipsis))).toList(),
                     onChanged: (val) => setState(() => _selectedSpbuKode = val!),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.access_time),
-                  onPressed: _isiWaktuSekarang,
-                  tooltip: 'Isi Waktu Sekarang'
+                IconButton(icon: const Icon(Icons.access_time), onPressed: _isiWaktuSekarang, tooltip: 'Isi Waktu Sekarang'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(onPressed: _tambahSpbu, icon: const Icon(Icons.add), label: const Text('Tambah SPBU'), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(onPressed: _hapusSpbu, icon: const Icon(Icons.delete), label: const Text('Hapus SPBU'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red)),
                 ),
               ],
             ),
@@ -464,6 +563,7 @@ class _BbmScreenState extends State<BbmScreen> {
   }
 }
 
+// ==================== TOKO SCREEN ====================
 class TokoScreen extends StatefulWidget {
   const TokoScreen({super.key});
 
@@ -479,9 +579,9 @@ class _TokoScreenState extends State<TokoScreen> {
   final _jamController = TextEditingController();
 
   final _namaItemController = TextEditingController();
-  final _namaItemFocusNode = FocusNode();
   final _hargaItemController = TextEditingController();
   final _qtyItemController = TextEditingController();
+  final FocusNode _namaItemFocusNode = FocusNode(); // PERBAIKAN: Gunakan FocusNode
 
   List<Map<String, dynamic>> _items = [];
 
@@ -505,16 +605,11 @@ class _TokoScreenState extends State<TokoScreen> {
     }
 
     setState(() {
-      _items.add({
-        'nama': _namaItemController.text,
-        'harga': harga,
-        'qty': qty,
-        'subtotal': harga * qty,
-      });
+      _items.add({'nama': _namaItemController.text, 'harga': harga, 'qty': qty, 'subtotal': harga * qty});
       _namaItemController.clear();
       _hargaItemController.clear();
       _qtyItemController.clear();
-      _namaItemFocusNode.requestFocus();
+      _namaItemFocusNode.requestFocus(); // PERBAIKAN: requestFocus pada FocusNode
     });
   }
 
@@ -552,18 +647,14 @@ class _TokoScreenState extends State<TokoScreen> {
       lines.add("");
     }
 
-    lines.addAll([
-      g,
-      "Total".padRight(18) + ("Rp${fmt(_total)}").padLeft(14),
-      g,
-      centerText(AppConfig.footerToko[0], AppConfig.lebarKarakter),
-      centerText(AppConfig.footerToko[1], AppConfig.lebarKarakter),
-    ]);
+    String totalLine = "${"Total".padRight(18)}${("Rp${fmt(_total)}").padLeft(14)}";
+   
+    lines.addAll([g, totalLine, g, centerText(AppConfig.footerToko[0], AppConfig.lebarKarakter), centerText(AppConfig.footerToko[1], AppConfig.lebarKarakter)]);
 
     String teks = lines.join('\n');
     showDialog(
       context: context,
-      builder: (context) => PreviewDialog(teks: teks, namaFile: "struk_${_noStrukController.text}.txt"),
+      builder: (context) => PreviewDialog(teks: teks, namaFile: "struk_${_noStrukController.text}.txt", pakaiLogo: false),
     );
    
     setState(() {
@@ -611,12 +702,7 @@ class _TokoScreenState extends State<TokoScreen> {
               children: [
                 Text("Total: Rp${fmt(_total)}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const Spacer(),
-                ElevatedButton.icon(
-                  onPressed: _cetakStruk,
-                  icon: const Icon(Icons.print),
-                  label: const Text('Cetak Struk'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                ),
+                ElevatedButton.icon(onPressed: _cetakStruk, icon: const Icon(Icons.print), label: const Text('Cetak Struk'), style: ElevatedButton.styleFrom(backgroundColor: Colors.green)),
               ],
             ),
           ),
@@ -626,6 +712,7 @@ class _TokoScreenState extends State<TokoScreen> {
   }
 }
 
+// ==================== SETTINGS SCREEN ====================
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -637,6 +724,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<BluetoothInfo> _printers = [];
   String? _selectedPrinter;
   bool _isScanning = false;
+  bool _enableLogo = true;
 
   @override
   void initState() {
@@ -648,6 +736,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _selectedPrinter = prefs.getString('selected_printer');
+      _enableLogo = prefs.getBool('enable_logo') ?? true;
     });
     _scanPrinters();
   }
@@ -673,6 +762,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_printer', _selectedPrinter ?? '');
+    await prefs.setBool('enable_logo', _enableLogo);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pengaturan disimpan!')));
     }
@@ -719,7 +809,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Pilih Printer Bluetooth', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('🖨️ Printer Bluetooth', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             if (_isScanning)
               const Center(child: CircularProgressIndicator())
@@ -727,29 +817,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               DropdownButtonFormField<String>(
                 value: _selectedPrinter,
                 decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Pilih Printer'),
+                // PERBAIKAN: Gunakan p.macAdress (dengan 1 'd') sesuai bug bawaan package
                 items: _printers.map((p) => DropdownMenuItem(value: p.macAdress, child: Text("${p.name} (${p.macAdress})"))).toList(),
                 onChanged: (val) => setState(() => _selectedPrinter = val),
               ),
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _scanPrinters,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Scan Ulang'),
-                  ),
-                ),
+                Expanded(child: ElevatedButton.icon(onPressed: _scanPrinters, icon: const Icon(Icons.refresh), label: const Text('Scan Ulang'))),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _testPrint,
-                    icon: const Icon(Icons.print),
-                    label: const Text('Test Print'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                  ),
-                ),
+                Expanded(child: ElevatedButton.icon(onPressed: _testPrint, icon: const Icon(Icons.print), label: const Text('Test Print'), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange))),
               ],
+            ),
+            const Divider(height: 32),
+            const Text('🖼️ Logo di Struk', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              title: const Text('Tampilkan Logo'),
+              subtitle: const Text('Logo akan dicetak di bagian atas struk'),
+              value: _enableLogo,
+              onChanged: (val) => setState(() => _enableLogo = val),
             ),
             const Spacer(),
             ElevatedButton(
@@ -764,11 +851,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+// ==================== PREVIEW DIALOG ====================
 class PreviewDialog extends StatefulWidget {
   final String teks;
   final String namaFile;
+  final bool pakaiLogo;
 
-  const PreviewDialog({super.key, required this.teks, required this.namaFile});
+  const PreviewDialog({super.key, required this.teks, required this.namaFile, required this.pakaiLogo});
 
   @override
   State<PreviewDialog> createState() => _PreviewDialogState();
@@ -776,6 +865,36 @@ class PreviewDialog extends StatefulWidget {
 
 class _PreviewDialogState extends State<PreviewDialog> {
   bool _isPrinting = false;
+  bool _enableLogo = true;
+  static const String _logoAsset = 'assets/logo_pertamina.jpg'; // Pastikan nama file sesuai
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLogoSetting();
+  }
+
+  Future<void> _loadLogoSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _enableLogo = prefs.getBool('enable_logo') ?? true;
+      });
+    }
+  }
+
+  Future<void> _simpanTxt() async {
+    try {
+      final path = await saveTextToFile(widget.teks, widget.namaFile);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✓ File disimpan di:\n$path')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
+      }
+    }
+  }
 
   Future<void> _cetak() async {
     final prefs = await SharedPreferences.getInstance();
@@ -790,18 +909,31 @@ class _PreviewDialogState extends State<PreviewDialog> {
 
     setState(() => _isPrinting = true);
     try {
-      bool connected = await PrinterService.connect(printerMac);
-      if (!connected) throw Exception("Gagal terhubung. Cek apakah printer menyala dan sudah dipasangkan di Bluetooth Android.");
+      final connected = await PrinterService.connect(printerMac);
+      if (!connected) throw Exception('Gagal terhubung. Pastikan printer menyala & sudah di-pairing di Bluetooth Android.');
 
-      bool result = await PrinterService.printText(widget.teks);
+      if (widget.pakaiLogo && _enableLogo) {
+        try {
+          final byteData = await rootBundle.load(_logoAsset);
+          final logoBytes = await logoBytesToEscPos(byteData.buffer.asUint8List(), maxWidth: 384);
+          if (logoBytes.isNotEmpty) {
+            await PrinterService.printBytes(logoBytes);
+            await Future.delayed(const Duration(milliseconds: 300));
+          }
+        } catch (_) {
+          // Jika logo gagal, lanjut cetak teks saja
+        }
+      }
+
+      final result = await PrinterService.printText(widget.teks);
       await PrinterService.disconnect();
 
       if (mounted) {
         if (result) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Berhasil dicetak ke printer!')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✓ Berhasil dicetak ke printer!')));
           Navigator.of(context).pop();
         } else {
-          throw Exception("Gagal mengirim data ke printer");
+          throw Exception('Gagal mengirim data ke printer');
         }
       }
     } catch (e) {
@@ -820,31 +952,32 @@ class _PreviewDialogState extends State<PreviewDialog> {
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4)
-            ),
-            child: Text(
-              widget.teks,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.2),
-            ),
+          child: Column(
+            children: [
+              if (widget.pakaiLogo && _enableLogo)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Image.asset(_logoAsset, height: 70),
+                ),
+              Container(
+                width: double.maxFinite,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.grey[200], border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(4)),
+                child: Text(widget.teks, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.2)),
+              ),
+            ],
           ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Tutup')
-        ),
+        TextButton(onPressed: _simpanTxt, child: const Text('💾 Simpan TXT')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Tutup')),
         ElevatedButton(
           onPressed: _isPrinting ? null : _cetak,
           style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
           child: _isPrinting
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Text('🖨️ Cetak ke Bluetooth', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              : const Text('🖨️ Cetak', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         ),
       ],
     );

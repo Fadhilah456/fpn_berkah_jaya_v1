@@ -21,16 +21,23 @@ class PrinterService {
 
   static Future<bool> printText(String text) async {
     try {
-      // Jeda singkat untuk stabilitas koneksi printer iware
       await Future.delayed(const Duration(milliseconds: 500));
-      
-      // Tambahkan \n\n\n di akhir untuk memicu pemotongan kertas
       String finalText = text + "\n\n\n";
       List<int> bytes = utf8.encode(finalText);
       bool result = await PrintBluetoothThermal.writeBytes(bytes);
       return result;
     } catch (e) {
       throw Exception("Gagal mencetak: $e");
+    }
+  }
+
+  static Future<bool> printBytes(List<int> bytes) async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 300));
+      bool result = await PrintBluetoothThermal.writeBytes(bytes);
+      return result;
+    } catch (e) {
+      throw Exception("Gagal mencetak bytes: $e");
     }
   }
 

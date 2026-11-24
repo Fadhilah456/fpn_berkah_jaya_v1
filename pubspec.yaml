@@ -1,7 +1,7 @@
 name: fpn_berkah_abadi
-description: FPN BERKAH ABADI v3.1.0 Flutter App for Android & iware Thermal Printer
+description: FPN BERKAH JAYA v3.2.0 Flutter App for Android & iware Thermal Printer
 publish_to: 'none'
-version: 3.1.0+1
+version: 3.2.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -15,11 +15,23 @@ dependencies:
   crypto: ^3.0.3
   intl: ^0.19.0
   provider: ^6.1.2
+  path_provider: ^2.1.3
+  image: ^4.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/ICO.png
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/ICO.png"
+  min_sdk_android: 21
