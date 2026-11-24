@@ -1,0 +1,25 @@
+name: fpn_berkah_abadi
+description: FPN BERKAH ABADI v3.1.0 Flutter App for Android & iware Thermal Printer
+publish_to: 'none'
+version: 3.1.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  print_bluetooth_thermal: ^1.1.5
+  device_info_plus: ^10.1.0
+  shared_preferences: ^2.2.3
+  crypto: ^3.0.3
+  intl: ^0.19.0
+  provider: ^6.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
