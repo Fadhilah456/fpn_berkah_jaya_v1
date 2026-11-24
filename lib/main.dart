@@ -1,3 +1,6 @@
+import 'services/update_service.dart';
+import 'widgets/tutorial_dialog.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +11,8 @@ import 'dart:convert';
 import 'config.dart';
 import 'utils.dart';
 import 'services/printer_service.dart';
+import 'package:share_plus/share_plus.dart';
+import 'file_history.dart';
 
 void main() {
   runApp(const MyApp());
@@ -39,50 +44,124 @@ class _StartupScreenState extends State<StartupScreen> {
   @override
   void initState() {
     super.initState();
-    _checkActivation();
+    _startAppFlow();
   }
 
-  Future<void> _checkActivation() async {
+  Future<void> _startAppFlow() async {
+    // 1. Cek Aktivasi
     final prefs = await SharedPreferences.getInstance();
     final isActivated = prefs.getBool('is_activated') ?? false;
     if (!isActivated) {
-      if (mounted) {
-        final result = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const ActivationDialog(),
-        );
-        if (result == true) {
-          _showLogin();
-        } else {
-          SystemNavigator.pop();
-        }
-      }
-    } else {
-      _showLogin();
+      final result = await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => const ActivationDialog());
+      if (result != true) { SystemNavigator.pop(); return; }
+    }
+
+    // 2. Cek Login
+    final loginResult = await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => const LoginDialog());
+    if (loginResult != true) { SystemNavigator.pop(); return; }
+
+    // 3. Cek Tutorial (Hanya sekali)
+    final hasSeenTutorial = prefs.getBool('has_seen_tutorial') ?? false;
+    if (!hasSeenTutorial && mounted) {
+      await showDialog(context: context, barrierDismissible: false, builder: (_) => const TutorialDialog());
+    }
+
+    // 4. Cek Update
+    if (mounted) {
+      await _checkAndUpdate();
     }
   }
 
-  Future<void> _showLogin() async {
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const LoginDialog(),
-    );
-    if (result == true && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const MainScreen()),
-      );
-    } else {
-      SystemNavigator.pop();
+  Future<void> _checkAndUpdate() async {
+    // Tampilkan loading singkat agar user tahu sedang ada proses
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+
+    final updateData = await UpdateService.checkForUpdate();
+    if (mounted) Navigator.of(context).pop(); // Tutup loading
+
+    if (updateData['error'] != null) return; // Gagal cek, biarkan user masuk
+
+    if (updateData['has_update'] == true) {
+      final skipCount = await UpdateService.getSkipCount();
+      final latestVer = updateData['latest_version'];
+      final downloadUrl = updateData['download_url'];
+
+      if (skipCount >= 3) {
+        // === HARD UPDATE (WAJIB) ===
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('⚠️ Update Wajib', textAlign: TextAlign.center),
+            content: Text(
+              'Versi aplikasi Anda sudah terlalu lama (v${AppConfig.version}).\n'
+              'Versi terbaru: v$latestVer\n\n'
+              'Harap update sekarang agar aplikasi dapat berfungsi dengan baik dan mendapatkan fitur terbaru.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final url = Uri.parse(downloadUrl);
+                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                },
+                icon: const Icon(Icons.download),
+                label: const Text('Update Sekarang'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              )
+            ],
+          ),
+        );
+        // Jika user menutup dialog wajib update (misal via back button), keluar dari aplikasi
+        if (mounted) SystemNavigator.pop();
+      } else {
+        // === SOFT UPDATE (SARAN) ===
+        final shouldUpdate = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('🎉 Update Tersedia', textAlign: TextAlign.center),
+            content: Text(
+              'Versi terbaru v$latestVer sudah tersedia.\n'
+              'Versi Anda: v${AppConfig.version}\n\n'
+              'Disarankan untuk update agar mendapatkan perbaikan bug dan fitur baru.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await UpdateService.incrementSkipCount();
+                  Navigator.of(context).pop(false); // Skip
+                },
+                child: Text('Nanti Saja (${3 - skipCount}x lagi)'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await UpdateService.resetSkipCount(); // Reset hitungan jika user mau update
+                  final url = Uri.parse(downloadUrl);
+                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                  Navigator.of(context).pop(true);
+                },
+                icon: const Icon(Icons.download),
+                label: const Text('Update Sekarang'),
+              ),
+            ],
+          ),
+        );
+       
+        // Jika user memilih update, kita biarkan mereka masuk ke app setelah browser terbuka
+        // Jika user skip, mereka tetap masuk ke app
+      }
+    }
+
+    // 5. Masuk ke MainScreen
+    if (mounted) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MainScreen()));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
 
@@ -726,10 +805,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isScanning = false;
   bool _enableLogo = true;
 
+  // Variabel untuk section Harga BBM
+  List<Map<String, String>> _daftarSpbu = [];
+  String _spbuEditKode = "";
+  final TextEditingController _hargaEditController = TextEditingController();
+  bool _isLoadingSpbu = true;
+
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadDaftarSpbu();
   }
 
   Future<void> _loadSettings() async {
@@ -739,6 +825,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _enableLogo = prefs.getBool('enable_logo') ?? true;
     });
     _scanPrinters();
+  }
+
+  Future<void> _loadDaftarSpbu() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedSpbu = prefs.getStringList('daftar_spbu');
+
+    List<Map<String, String>> spbuList;
+    if (savedSpbu != null && savedSpbu.isNotEmpty) {
+      spbuList = savedSpbu.map((s) {
+        final parts = s.split('|');
+        return {'kode': parts[0], 'nama': parts[1], 'alamat': parts[2], 'harga': parts[3]};
+      }).toList();
+    } else {
+      spbuList = List<Map<String, String>>.from(AppConfig.defaultDaftarSpbu);
+    }
+
+    setState(() {
+      _daftarSpbu = spbuList;
+      if (_daftarSpbu.isNotEmpty) {
+        _spbuEditKode = _daftarSpbu.first['kode']!;
+        _hargaEditController.text = _daftarSpbu.first['harga']!;
+      }
+      _isLoadingSpbu = false;
+    });
   }
 
   Future<void> _scanPrinters() async {
@@ -773,16 +883,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pilih printer terlebih dahulu!')));
       return;
     }
-
     try {
       bool connected = await PrinterService.connect(_selectedPrinter!);
-      if (!connected) throw Exception("Gagal terhubung ke printer. Pastikan printer menyala.");
+      if (!connected) throw Exception('Gagal terhubung ke printer. Pastikan printer menyala.');
 
       String testText = "TEST PRINT\n" + "=" * 32 + "\n" +
           "Jika Anda melihat ini,\nprinter berfungsi normal!\n" + "=" * 32 + "\n" +
           "Printer: $_selectedPrinter\n" +
           "Waktu: ${nowDateStr()} ${nowTimeStr()}\n";
-     
+
       bool result = await PrinterService.printText(testText);
       await PrinterService.disconnect();
 
@@ -790,7 +899,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (result) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Test Print Berhasil!')));
         } else {
-          throw Exception("Gagal mengirim data ke printer");
+          throw Exception('Gagal mengirim data ke printer');
         }
       }
     } catch (e) {
@@ -800,51 +909,168 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _onSpbuEditChanged(String? kode) {
+    if (kode == null) return;
+    setState(() {
+      _spbuEditKode = kode;
+      final spbu = _daftarSpbu.firstWhere((s) => s['kode'] == kode, orElse: () => _daftarSpbu.first);
+      _hargaEditController.text = spbu['harga'] ?? '';
+    });
+  }
+
+  Future<void> _simpanHarga() async {
+    final hargaBaru = _hargaEditController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    if (hargaBaru.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Harga tidak boleh kosong!')));
+      return;
+    }
+    for (var spbu in _daftarSpbu) {
+      if (spbu['kode'] == _spbuEditKode) {
+        spbu['harga'] = hargaBaru;
+        break;
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final spbuList = _daftarSpbu.map((s) => '${s['kode']}|${s['nama']}|${s['alamat']}|${s['harga']}').toList();
+    await prefs.setStringList('daftar_spbu', spbuList);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✓ Harga SPBU $_spbuEditKode berhasil diupdate menjadi Rp ${fmt(int.parse(hargaBaru))}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Pengaturan')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('🖨️ Printer Bluetooth', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-            if (_isScanning)
-              const Center(child: CircularProgressIndicator())
-            else
-              DropdownButtonFormField<String>(
-                value: _selectedPrinter,
-                decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Pilih Printer'),
-                // PERBAIKAN: Gunakan p.macAdress (dengan 1 'd') sesuai bug bawaan package
-                items: _printers.map((p) => DropdownMenuItem(value: p.macAdress, child: Text("${p.name} (${p.macAdress})"))).toList(),
-                onChanged: (val) => setState(() => _selectedPrinter = val),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. SECTION PRINTER
+              const Text('🖨️ Printer Bluetooth', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              if (_isScanning)
+                const Center(child: CircularProgressIndicator())
+              else
+                DropdownButtonFormField<String>(
+                  value: _selectedPrinter,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Pilih Printer'),
+                  items: _printers.map((p) => DropdownMenuItem(value: p.macAdress, child: Text("${p.name} (${p.macAdress})"))).toList(),
+                  onChanged: (val) => setState(() => _selectedPrinter = val),
+                ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: ElevatedButton.icon(onPressed: _scanPrinters, icon: const Icon(Icons.refresh), label: const Text('Scan Ulang'))),
+                  const SizedBox(width: 16),
+                  Expanded(child: ElevatedButton.icon(onPressed: _testPrint, icon: const Icon(Icons.print), label: const Text('Test Print'), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange))),
+                ],
               ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: ElevatedButton.icon(onPressed: _scanPrinters, icon: const Icon(Icons.refresh), label: const Text('Scan Ulang'))),
-                const SizedBox(width: 16),
-                Expanded(child: ElevatedButton.icon(onPressed: _testPrint, icon: const Icon(Icons.print), label: const Text('Test Print'), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange))),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(builder: (context) => const FileHistoryScreen()));
+                },
+                icon: const Icon(Icons.folder_open),
+                label: const Text('📁 Riwayat File (Bon & Struk)'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, padding: const EdgeInsets.all(14)),
+              ),
+
+              // 2. SECTION UPDATE & TUTORIAL (YANG ANDA TANYAKAN)
+              const Divider(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                        final data = await UpdateService.checkForUpdate();
+                        if (mounted) Navigator.pop(context);
+                       
+                        if (data['error'] != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(data['error'])));
+                        } else if (data['has_update'] == true) {
+                          await UpdateService.resetSkipCount();
+                          final url = Uri.parse(data['download_url']);
+                          if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Aplikasi Anda sudah versi terbaru!')));
+                        }
+                      },
+                      icon: const Icon(Icons.system_update),
+                      label: const Text('Cek Update'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        showDialog(context: context, builder: (_) => const TutorialDialog());
+                      },
+                      icon: const Icon(Icons.help_outline),
+                      label: const Text('Tutorial'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // 3. SECTION HARGA BBM
+              const Text('⛽ Harga BBM Non-Subsidi', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 4),
+              const Text('Atur harga dasar untuk setiap SPBU.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 12),
+              if (_isLoadingSpbu)
+                const Center(child: CircularProgressIndicator())
+              else ...[
+                DropdownButtonFormField<String>(
+                  value: _spbuEditKode,
+                  decoration: const InputDecoration(labelText: 'Pilih SPBU', border: OutlineInputBorder()),
+                  items: _daftarSpbu.map((s) => DropdownMenuItem(value: s['kode'], child: Text("${s['kode']} - ${s['nama']}", overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: _onSpbuEditChanged,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _hargaEditController,
+                  decoration: const InputDecoration(labelText: 'Harga Non-Subsidi (Rp/Liter)', border: OutlineInputBorder(), prefixText: 'Rp '),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _simpanHarga,
+                  icon: const Icon(Icons.save),
+                  label: const Text('💾 Simpan Harga'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, padding: const EdgeInsets.all(14)),
+                ),
               ],
-            ),
-            const Divider(height: 32),
-            const Text('🖼️ Logo di Struk', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              title: const Text('Tampilkan Logo'),
-              subtitle: const Text('Logo akan dicetak di bagian atas struk'),
-              value: _enableLogo,
-              onChanged: (val) => setState(() => _enableLogo = val),
-            ),
-            const Spacer(),
-            ElevatedButton(
-              onPressed: _saveSettings,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(16)),
-              child: const Text('💾 Simpan Pengaturan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            ),
-          ],
+
+              // 4. SECTION LOGO
+              const Divider(height: 32),
+              const Text('🖼️ Logo di Struk', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('Tampilkan Logo'),
+                subtitle: const Text('Logo akan dicetak di bagian atas struk'),
+                value: _enableLogo,
+                onChanged: (val) => setState(() => _enableLogo = val),
+              ),
+              const SizedBox(height: 16),
+
+              // 5. TOMBOL SIMPAN AKHIR
+              ElevatedButton(
+                onPressed: _saveSettings,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(16)),
+                child: const Text('💾 Simpan Pengaturan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -857,7 +1083,12 @@ class PreviewDialog extends StatefulWidget {
   final String namaFile;
   final bool pakaiLogo;
 
-  const PreviewDialog({super.key, required this.teks, required this.namaFile, required this.pakaiLogo});
+  const PreviewDialog({
+    super.key,
+    required this.teks,
+    required this.namaFile,
+    required this.pakaiLogo,
+  });
 
   @override
   State<PreviewDialog> createState() => _PreviewDialogState();
@@ -866,7 +1097,7 @@ class PreviewDialog extends StatefulWidget {
 class _PreviewDialogState extends State<PreviewDialog> {
   bool _isPrinting = false;
   bool _enableLogo = true;
-  static const String _logoAsset = 'assets/logo_pertamina.jpg'; // Pastikan nama file sesuai
+  static const String _logoAsset = 'assets/logo_pertamina.jpg';
 
   @override
   void initState() {
@@ -887,11 +1118,28 @@ class _PreviewDialogState extends State<PreviewDialog> {
     try {
       final path = await saveTextToFile(widget.teks, widget.namaFile);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✓ File disimpan di:\n$path')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✓ File disimpan di:\n$path')),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _bagikan() async {
+    try {
+      final path = await saveTextToFile(widget.teks, widget.namaFile);
+      await Share.shareXFiles([XFile(path)], text: widget.namaFile);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal bagikan: $e')),
+        );
       }
     }
   }
@@ -902,7 +1150,9 @@ class _PreviewDialogState extends State<PreviewDialog> {
 
     if (printerMac == null || printerMac.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Printer belum diatur di menu Pengaturan!')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Printer belum diatur di menu Pengaturan!'),
+        ));
       }
       return;
     }
@@ -910,18 +1160,25 @@ class _PreviewDialogState extends State<PreviewDialog> {
     setState(() => _isPrinting = true);
     try {
       final connected = await PrinterService.connect(printerMac);
-      if (!connected) throw Exception('Gagal terhubung. Pastikan printer menyala & sudah di-pairing di Bluetooth Android.');
+      if (!connected) {
+        throw Exception(
+          'Gagal terhubung. Pastikan printer menyala & sudah di-pairing di Bluetooth Android.',
+        );
+      }
 
       if (widget.pakaiLogo && _enableLogo) {
         try {
           final byteData = await rootBundle.load(_logoAsset);
-          final logoBytes = await logoBytesToEscPos(byteData.buffer.asUint8List(), maxWidth: 384);
+          final logoBytes = await logoBytesToEscPos(
+            byteData.buffer.asUint8List(),
+            maxWidth: 384,
+          );
           if (logoBytes.isNotEmpty) {
             await PrinterService.printBytes(logoBytes);
             await Future.delayed(const Duration(milliseconds: 300));
           }
         } catch (_) {
-          // Jika logo gagal, lanjut cetak teks saja
+          // Logo gagal? lanjut cetak teks saja.
         }
       }
 
@@ -930,7 +1187,9 @@ class _PreviewDialogState extends State<PreviewDialog> {
 
       if (mounted) {
         if (result) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✓ Berhasil dicetak ke printer!')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✓ Berhasil dicetak ke printer!')),
+          );
           Navigator.of(context).pop();
         } else {
           throw Exception('Gagal mengirim data ke printer');
@@ -938,7 +1197,9 @@ class _PreviewDialogState extends State<PreviewDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal Cetak: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal Cetak: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isPrinting = false);
@@ -962,22 +1223,56 @@ class _PreviewDialogState extends State<PreviewDialog> {
               Container(
                 width: double.maxFinite,
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.grey[200], border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(4)),
-                child: Text(widget.teks, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.2)),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  widget.teks,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    height: 1.2,
+                  ),
+                ),
               ),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: _simpanTxt, child: const Text('💾 Simpan TXT')),
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Tutup')),
+        TextButton(
+          onPressed: _simpanTxt,
+          child: const Text('💾 Simpan'),
+        ),
+        TextButton(
+          onPressed: _bagikan,
+          child: const Text('📤 Bagikan'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Tutup'),
+        ),
         ElevatedButton(
           onPressed: _isPrinting ? null : _cetak,
           style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
           child: _isPrinting
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Text('🖨️ Cetak', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Text(
+                  '🖨️ Cetak',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
         ),
       ],
     );

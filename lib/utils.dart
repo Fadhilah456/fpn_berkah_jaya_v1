@@ -55,7 +55,7 @@ String padLeft(String text, int width) {
   return text.padLeft(width);
 }
 
-// Simpan teks ke file TXT di folder Documents aplikasi
+// Simpan teks ke file TXT di folder internal aplikasi, kembalikan path-nya
 Future<String> saveTextToFile(String teks, String namaFile) async {
   final directory = await getApplicationDocumentsDirectory();
   final folder = Directory('${directory.path}/hasil');
@@ -65,6 +65,30 @@ Future<String> saveTextToFile(String teks, String namaFile) async {
   final file = File('${folder.path}/$namaFile');
   await file.writeAsString(teks, encoding: utf8);
   return file.path;
+}
+
+// Ambil daftar semua file .txt yang pernah disimpan (terbaru lebih dulu)
+Future<List<File>> listSavedFiles() async {
+  final directory = await getApplicationDocumentsDirectory();
+  final folder = Directory('${directory.path}/hasil');
+  if (!await folder.exists()) return [];
+  final files = folder
+      .listSync()
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.txt'))
+      .toList();
+  files.sort((a, b) =>
+      b.statSync().modified.compareTo(a.statSync().modified));
+  return files;
+}
+
+// Format ukuran file jadi KB/MB
+String formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
 
 /// Konversi bytes gambar (jpg/png) dari asset menjadi perintah ESC/POS raster
@@ -90,8 +114,7 @@ Future<List<int>> logoBytesToEscPos(
     final int bytesPerRow = (w + 7) ~/ 8;
     final List<int> out = <int>[];
 
-    // GS v 0 m xL xH yL yH [raster data]
-    out.addAll([0x1D, 0x76, 0x30, 0x00]); // m = 0 (normal)
+    out.addAll([0x1D, 0x76, 0x30, 0x00]);
     out.add(bytesPerRow & 0xFF);
     out.add((bytesPerRow >> 8) & 0xFF);
     out.add(h & 0xFF);
@@ -105,7 +128,7 @@ Future<List<int>> logoBytesToEscPos(
           if (px < w) {
             final p = gray.getPixel(px, y);
             final lum = (p.r + p.g + p.b) ~/ 3;
-            if (lum < 128) byte |= (1 << (7 - bit)); // hitam = bit 1
+            if (lum < 128) byte |= (1 << (7 - bit));
           }
         }
         out.add(byte);
