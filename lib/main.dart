@@ -1097,7 +1097,7 @@ class PreviewDialog extends StatefulWidget {
 class _PreviewDialogState extends State<PreviewDialog> {
   bool _isPrinting = false;
   bool _enableLogo = true;
-  static const String _logoAsset = 'assets/logo_pertamina.jpg';
+  static const String _logoAsset = 'assets/logo.png';
 
   @override
   void initState() {
