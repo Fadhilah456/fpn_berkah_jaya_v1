@@ -16,22 +16,26 @@ class _TutorialDialogState extends State<TutorialDialog> {
     {
       'icon': '🔒',
       'title': '1. Aktivasi & Login',
-      'desc': 'Salin ID Perangkat dan kirim ke admin untuk mendapatkan kode aktivasi. Setelah aktif, masukkan password utama untuk masuk.'
+      'desc':
+          'Salin ID Perangkat dan kirim ke admin untuk mendapatkan kode aktivasi. Setelah aktif, masukkan password utama untuk masuk aplikasi.'
     },
     {
       'icon': '⛽',
       'title': '2. Bon BBM',
-      'desc': 'Pilih SPBU, isi volume dan nominal. Aplikasi akan otomatis menghitung subsidi. Klik "Simpan & Cetak" untuk melihat preview.'
+      'desc':
+          'Pilih SPBU, isi volume dan nominal. Aplikasi otomatis menghitung subsidi. Klik "Simpan & Cetak" untuk melihat preview lalu cetak ke printer.'
     },
     {
       'icon': '🛒',
       'title': '3. Struk Toko',
-      'desc': 'Masukkan nama barang, harga, dan jumlah. Klik tombol "+" untuk menambah. Total akan dihitung otomatis. Masukkan password khusus untuk mengakses menu ini.'
+      'desc':
+          'Masukkan nama barang, harga, dan jumlah, lalu klik "+". Total dihitung otomatis. Menu ini dikunci password khusus.'
     },
     {
       'icon': '⚙️',
       'title': '4. Pengaturan',
-      'desc': 'Atur printer Bluetooth, aktifkan/nonaktifkan logo, ubah harga non-subsidi, dan lihat riwayat file bon/struk yang pernah dibuat.'
+      'desc':
+          'Atur printer Bluetooth, ukuran kertas (58/80mm), skala logo, harga non-subsidi, lihat riwayat file, cek update, dan buka tutorial ini lagi.'
     }
   ];
 
@@ -61,9 +65,14 @@ class _TutorialDialogState extends State<TutorialDialog> {
                     children: [
                       Text(step['icon']!, style: const TextStyle(fontSize: 48)),
                       const SizedBox(height: 16),
-                      Text(step['title']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(step['title']!,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Text(step['desc']!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.black87)),
+                      Text(step['desc']!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 14, color: Colors.black87)),
                     ],
                   );
                 },
@@ -98,13 +107,17 @@ class _TutorialDialogState extends State<TutorialDialog> {
         ElevatedButton(
           onPressed: () {
             if (_currentPage < _tutorialSteps.length - 1) {
-              _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+              _pageController.nextPage(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut);
             } else {
               _markAsSeen();
               Navigator.of(context).pop();
             }
           },
-          child: Text(_currentPage == _tutorialSteps.length - 1 ? 'Mengerti!' : 'Lanjut'),
+          child: Text(_currentPage == _tutorialSteps.length - 1
+              ? 'Mengerti!'
+              : 'Lanjut'),
         ),
       ],
     );

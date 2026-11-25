@@ -130,17 +130,11 @@ class _FileHistoryScreenState extends State<FileHistoryScreen> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 10),
                         child: ListTile(
-                          leading: const Icon(
-                            Icons.description,
-                            color: Colors.blue,
-                            size: 36,
-                          ),
-                          title: Text(
-                            name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          leading: const Icon(Icons.description,
+                              color: Colors.blue, size: 36),
+                          title: Text(name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold)),
                           subtitle: Text(
                             '${formatBytes(size)} • '
                             '${mod.day}/${mod.month}/${mod.year} '

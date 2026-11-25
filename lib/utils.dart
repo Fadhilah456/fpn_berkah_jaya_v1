@@ -55,7 +55,23 @@ String padLeft(String text, int width) {
   return text.padLeft(width);
 }
 
-// Simpan teks ke file TXT di folder internal aplikasi, kembalikan path-nya
+/// Baris dengan LABEL di kiri dan NILAI rata kanan (total = width).
+String rowRight(String label, String value, int width) {
+  int space = width - label.length - value.length;
+  if (space < 1) space = 1;
+  return label + (" " * space) + value;
+}
+
+/// Baris Key-Value natural (label : value), aman di 32 maupun 48 karakter.
+String rowKV(String label, String value) {
+  return "$label : $value";
+}
+
+/// Lebar karakter berdasarkan ukuran kertas printer.
+int getLebarKarakter(int paperWidthMm) {
+  return (paperWidthMm == 58) ? 32 : 48;
+}
+
 Future<String> saveTextToFile(String teks, String namaFile) async {
   final directory = await getApplicationDocumentsDirectory();
   final folder = Directory('${directory.path}/hasil');
@@ -67,7 +83,6 @@ Future<String> saveTextToFile(String teks, String namaFile) async {
   return file.path;
 }
 
-// Ambil daftar semua file .txt yang pernah disimpan (terbaru lebih dulu)
 Future<List<File>> listSavedFiles() async {
   final directory = await getApplicationDocumentsDirectory();
   final folder = Directory('${directory.path}/hasil');
@@ -82,7 +97,6 @@ Future<List<File>> listSavedFiles() async {
   return files;
 }
 
-// Format ukuran file jadi KB/MB
 String formatBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) {
@@ -91,21 +105,32 @@ String formatBytes(int bytes) {
   return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
 
-/// Konversi bytes gambar (jpg/png) dari asset menjadi perintah ESC/POS raster
-/// (GS v 0). Mendukung JPEG & PNG otomatis. Width default 384 dot (58mm).
+/// Konversi logo menjadi ESC/POS raster (GS v 0).
+/// FIX: satu loop saja (tidak double), ukuran proporsional per kertas.
+/// [paperWidthMm]: 58 atau 80. [logoScale]: 0.5 - 2.0.
 Future<List<int>> logoBytesToEscPos(
   Uint8List bytes, {
-  int maxWidth = 384,
+  int paperWidthMm = 80,
+  double logoScale = 1.0,
 }) async {
   try {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return [];
 
+    int maxDots = (paperWidthMm == 58) ? 384 : 576;
+    int defaultMax = (paperWidthMm == 58) ? 150 : 200;
+    int effectiveMax = defaultMax > maxDots ? maxDots : defaultMax;
+
     int w = decoded.width;
     int h = decoded.height;
-    if (w > maxWidth) {
-      h = (h * maxWidth / w).round();
-      w = maxWidth;
+
+    int targetW = (w * logoScale).round();
+    if (targetW > effectiveMax) targetW = effectiveMax;
+    if (targetW < 32) targetW = 32;
+
+    if (w != targetW) {
+      h = (h * targetW / w).round();
+      w = targetW;
     }
 
     final resized = img.copyResize(decoded, width: w, height: h);

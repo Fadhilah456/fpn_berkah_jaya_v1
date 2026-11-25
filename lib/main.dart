@@ -1,18 +1,15 @@
-import 'services/update_service.dart';
-import 'widgets/tutorial_dialog.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'dart:convert';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'config.dart';
 import 'utils.dart';
-import 'services/printer_service.dart';
-import 'package:share_plus/share_plus.dart';
 import 'file_history.dart';
+import 'services/printer_service.dart';
+import 'services/update_service.dart';
+import 'widgets/tutorial_dialog.dart';
 
 void main() {
   runApp(const MyApp());
@@ -24,7 +21,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'FPN BERKAH JAYA',
+      title: 'FPN BERKAH ABADI',
       theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       home: const StartupScreen(),
       debugShowCheckedModeBanner: false,
@@ -32,7 +29,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ==================== STARTUP SCREEN ====================
+// ==================== STARTUP ====================
 class StartupScreen extends StatefulWidget {
   const StartupScreen({super.key});
 
@@ -48,38 +45,60 @@ class _StartupScreenState extends State<StartupScreen> {
   }
 
   Future<void> _startAppFlow() async {
-    // 1. Cek Aktivasi
     final prefs = await SharedPreferences.getInstance();
+
+    // 1. Aktivasi
     final isActivated = prefs.getBool('is_activated') ?? false;
     if (!isActivated) {
-      final result = await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => const ActivationDialog());
-      if (result != true) { SystemNavigator.pop(); return; }
+      final result = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const ActivationDialog(),
+      );
+      if (result != true) {
+        SystemNavigator.pop();
+        return;
+      }
     }
 
-    // 2. Cek Login
-    final loginResult = await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => const LoginDialog());
-    if (loginResult != true) { SystemNavigator.pop(); return; }
+    // 2. Login
+    final loginResult = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const LoginDialog(),
+    );
+    if (loginResult != true) {
+      SystemNavigator.pop();
+      return;
+    }
 
-    // 3. Cek Tutorial (Hanya sekali)
+    // 3. Tutorial (sekali)
     final hasSeenTutorial = prefs.getBool('has_seen_tutorial') ?? false;
     if (!hasSeenTutorial && mounted) {
-      await showDialog(context: context, barrierDismissible: false, builder: (_) => const TutorialDialog());
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const TutorialDialog(),
+      );
     }
 
     // 4. Cek Update
-    if (mounted) {
-      await _checkAndUpdate();
-    }
+    if (mounted) await _checkAndUpdate();
   }
 
   Future<void> _checkAndUpdate() async {
-    // Tampilkan loading singkat agar user tahu sedang ada proses
-    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
     final updateData = await UpdateService.checkForUpdate();
-    if (mounted) Navigator.of(context).pop(); // Tutup loading
+    if (mounted) Navigator.of(context).pop();
 
-    if (updateData['error'] != null) return; // Gagal cek, biarkan user masuk
+    if (updateData['error'] != null) {
+      _goMain();
+      return;
+    }
 
     if (updateData['has_update'] == true) {
       final skipCount = await UpdateService.getSkipCount();
@@ -87,7 +106,7 @@ class _StartupScreenState extends State<StartupScreen> {
       final downloadUrl = updateData['download_url'];
 
       if (skipCount >= 3) {
-        // === HARD UPDATE (WAJIB) ===
+        // HARD UPDATE (wajib)
         await showDialog(
           context: context,
           barrierDismissible: false,
@@ -96,14 +115,16 @@ class _StartupScreenState extends State<StartupScreen> {
             content: Text(
               'Versi aplikasi Anda sudah terlalu lama (v${AppConfig.version}).\n'
               'Versi terbaru: v$latestVer\n\n'
-              'Harap update sekarang agar aplikasi dapat berfungsi dengan baik dan mendapatkan fitur terbaru.',
+              'Harap update sekarang agar aplikasi berfungsi dengan baik.',
               textAlign: TextAlign.center,
             ),
             actions: [
               ElevatedButton.icon(
                 onPressed: () async {
                   final url = Uri.parse(downloadUrl);
-                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
                 },
                 icon: const Icon(Icons.download),
                 label: const Text('Update Sekarang'),
@@ -112,34 +133,36 @@ class _StartupScreenState extends State<StartupScreen> {
             ],
           ),
         );
-        // Jika user menutup dialog wajib update (misal via back button), keluar dari aplikasi
         if (mounted) SystemNavigator.pop();
+        return;
       } else {
-        // === SOFT UPDATE (SARAN) ===
-        final shouldUpdate = await showDialog<bool>(
+        // SOFT UPDATE (saran)
+        await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('🎉 Update Tersedia', textAlign: TextAlign.center),
             content: Text(
               'Versi terbaru v$latestVer sudah tersedia.\n'
               'Versi Anda: v${AppConfig.version}\n\n'
-              'Disarankan untuk update agar mendapatkan perbaikan bug dan fitur baru.',
+              'Disarankan update untuk perbaikan bug dan fitur baru.',
               textAlign: TextAlign.center,
             ),
             actions: [
               TextButton(
                 onPressed: () async {
                   await UpdateService.incrementSkipCount();
-                  Navigator.of(context).pop(false); // Skip
+                  if (mounted) Navigator.of(context).pop(false);
                 },
                 child: Text('Nanti Saja (${3 - skipCount}x lagi)'),
               ),
               ElevatedButton.icon(
                 onPressed: () async {
-                  await UpdateService.resetSkipCount(); // Reset hitungan jika user mau update
+                  await UpdateService.resetSkipCount();
                   final url = Uri.parse(downloadUrl);
-                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
-                  Navigator.of(context).pop(true);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                  if (mounted) Navigator.of(context).pop(true);
                 },
                 icon: const Icon(Icons.download),
                 label: const Text('Update Sekarang'),
@@ -147,15 +170,16 @@ class _StartupScreenState extends State<StartupScreen> {
             ],
           ),
         );
-       
-        // Jika user memilih update, kita biarkan mereka masuk ke app setelah browser terbuka
-        // Jika user skip, mereka tetap masuk ke app
       }
     }
+    _goMain();
+  }
 
-    // 5. Masuk ke MainScreen
+  void _goMain() {
     if (mounted) {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MainScreen()));
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+      );
     }
   }
 
@@ -165,7 +189,7 @@ class _StartupScreenState extends State<StartupScreen> {
   }
 }
 
-// ==================== ACTIVATION DIALOG ====================
+// ==================== ACTIVATION ====================
 class ActivationDialog extends StatefulWidget {
   const ActivationDialog({super.key});
 
@@ -195,16 +219,19 @@ class _ActivationDialogState extends State<ActivationDialog> {
   }
 
   Future<void> _verify() async {
-    final correctCode = generateActivationCode(_machineId).replaceAll('-', '');
-    final inputCode = _codeController.text.trim().replaceAll('-', '').toUpperCase();
-   
+    final correctCode =
+        generateActivationCode(_machineId).replaceAll('-', '');
+    final inputCode =
+        _codeController.text.trim().replaceAll('-', '').toUpperCase();
     if (inputCode == correctCode) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('is_activated', true);
       if (mounted) Navigator.of(context).pop(true);
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kode aktivasi salah!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kode aktivasi salah!')),
+        );
       }
     }
   }
@@ -223,13 +250,16 @@ class _ActivationDialogState extends State<ActivationDialog> {
               children: [
                 const Text('ID Perangkat: '),
                 Expanded(
-                  child: Text(_isLoading ? "Memuat..." : _machineId, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text(_isLoading ? "Memuat..." : _machineId,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 IconButton(
                   icon: const Icon(Icons.copy),
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: _machineId));
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID Perangkat disalin!')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('ID Perangkat disalin!')),
+                    );
                   },
                 )
               ],
@@ -237,21 +267,25 @@ class _ActivationDialogState extends State<ActivationDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _codeController,
-              decoration: const InputDecoration(labelText: 'Kode Aktivasi', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'Kode Aktivasi', border: OutlineInputBorder()),
               textCapitalization: TextCapitalization.characters,
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Batal')),
-        ElevatedButton(onPressed: _verify, child: const Text('Verifikasi & Aktifkan')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Batal')),
+        ElevatedButton(
+            onPressed: _verify, child: const Text('Verifikasi & Aktifkan')),
       ],
     );
   }
 }
 
-// ==================== LOGIN DIALOG ====================
+// ==================== LOGIN ====================
 class LoginDialog extends StatefulWidget {
   const LoginDialog({super.key});
 
@@ -266,7 +300,9 @@ class _LoginDialogState extends State<LoginDialog> {
     if (_passwordController.text == AppConfig.password) {
       Navigator.of(context).pop(true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password salah!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password salah!')),
+      );
       _passwordController.clear();
     }
   }
@@ -283,7 +319,8 @@ class _LoginDialogState extends State<LoginDialog> {
           TextField(
             controller: _passwordController,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+                labelText: 'Password', border: OutlineInputBorder()),
             onSubmitted: (_) => _checkPassword(),
           ),
         ],
@@ -293,7 +330,7 @@ class _LoginDialogState extends State<LoginDialog> {
   }
 }
 
-// ==================== MAIN SCREEN ====================
+// ==================== MAIN ====================
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -340,13 +377,16 @@ class _MainScreenState extends State<MainScreen> {
           decoration: const InputDecoration(labelText: 'Password'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Batal')),
           ElevatedButton(
             onPressed: () {
               if (controller.text == AppConfig.passwordToko) {
                 Navigator.pop(context, true);
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password salah!')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Password salah!')));
               }
             },
             child: const Text('Masuk'),
@@ -360,7 +400,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// ==================== BBM SCREEN ====================
+// ==================== BBM ====================
 class BbmScreen extends StatefulWidget {
   const BbmScreen({super.key});
 
@@ -393,17 +433,20 @@ class _BbmScreenState extends State<BbmScreen> {
   Future<void> _loadSpbu() async {
     final prefs = await SharedPreferences.getInstance();
     final savedSpbu = prefs.getStringList('daftar_spbu');
-   
     setState(() {
       if (savedSpbu != null && savedSpbu.isNotEmpty) {
         _daftarSpbu = savedSpbu.map((s) {
           final parts = s.split('|');
-          return {'kode': parts[0], 'nama': parts[1], 'alamat': parts[2], 'harga': parts[3]};
+          return {
+            'kode': parts[0],
+            'nama': parts[1],
+            'alamat': parts[2],
+            'harga': parts[3]
+          };
         }).toList();
       } else {
         _daftarSpbu = List<Map<String, String>>.from(AppConfig.defaultDaftarSpbu);
       }
-     
       if (_daftarSpbu.isNotEmpty) {
         _selectedSpbuKode = _daftarSpbu.first['kode']!;
       }
@@ -413,14 +456,17 @@ class _BbmScreenState extends State<BbmScreen> {
 
   Future<void> _saveSpbu() async {
     final prefs = await SharedPreferences.getInstance();
-    final spbuList = _daftarSpbu.map((s) => '${s['kode']}|${s['nama']}|${s['alamat']}|${s['harga']}').toList();
+    final spbuList = _daftarSpbu
+        .map((s) => '${s['kode']}|${s['nama']}|${s['alamat']}|${s['harga']}')
+        .toList();
     await prefs.setStringList('daftar_spbu', spbuList);
     await prefs.setString('spbu_terpilih', _selectedSpbuKode);
   }
 
   Map<String, String> get _currentSpbu {
     if (_daftarSpbu.isEmpty) return AppConfig.defaultDaftarSpbu.first;
-    return _daftarSpbu.firstWhere((s) => s['kode'] == _selectedSpbuKode, orElse: () => _daftarSpbu.first);
+    return _daftarSpbu.firstWhere((s) => s['kode'] == _selectedSpbuKode,
+        orElse: () => _daftarSpbu.first);
   }
 
   void _isiWaktuSekarang() {
@@ -435,7 +481,6 @@ class _BbmScreenState extends State<BbmScreen> {
     final namaCtrl = TextEditingController();
     final alamatCtrl = TextEditingController();
     final hargaCtrl = TextEditingController();
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -459,7 +504,8 @@ class _BbmScreenState extends State<BbmScreen> {
           ElevatedButton(
             onPressed: () {
               if (kodeCtrl.text.isEmpty || namaCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kode dan Nama wajib diisi!')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Kode dan Nama wajib diisi!')));
                 return;
               }
               setState(() {
@@ -473,7 +519,8 @@ class _BbmScreenState extends State<BbmScreen> {
               });
               _saveSpbu();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SPBU berhasil ditambahkan!')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('SPBU berhasil ditambahkan!')));
             },
             child: const Text('Simpan'),
           ),
@@ -484,7 +531,8 @@ class _BbmScreenState extends State<BbmScreen> {
 
   void _hapusSpbu() {
     if (_daftarSpbu.length <= 1) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Minimal harus ada 1 SPBU!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Minimal harus ada 1 SPBU!')));
       return;
     }
     showDialog(
@@ -503,7 +551,8 @@ class _BbmScreenState extends State<BbmScreen> {
               });
               _saveSpbu();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SPBU dihapus!')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('SPBU dihapus!')));
             },
             child: const Text('Hapus', style: TextStyle(color: Colors.white)),
           ),
@@ -512,52 +561,56 @@ class _BbmScreenState extends State<BbmScreen> {
     );
   }
 
-  void _prosesDanPreview() {
+  Future<void> _prosesDanPreview() async {
     if (_volController.text.isEmpty || _nomController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Volume dan Nominal wajib diisi!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Volume dan Nominal wajib diisi!')));
       return;
     }
-   
+
     double vol = double.tryParse(_volController.text.replaceAll(',', '.')) ?? 0;
     int nom = int.tryParse(_nomController.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     int hargaNonSub = int.tryParse(_currentSpbu['harga'] ?? '0') ?? 0;
 
     if (vol == 0 || hargaNonSub == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data tidak valid!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Data tidak valid!')));
       return;
     }
+
+    final prefs = await SharedPreferences.getInstance();
+    final paperWidth = prefs.getInt('paper_width_mm') ?? 80;
+    final lebar = getLebarKarakter(paperWidth);
+    String g = "-" * lebar;
 
     int hargaJual = (nom / vol).round();
     int subLiter = hargaNonSub - hargaJual;
     int tanpaSub = (vol * hargaNonSub).round();
     int totSub = tanpaSub - nom;
-    String g = "-" * AppConfig.lebarKarakter;
-
-    String cashLine = "${"CASH".padRight(24)}${fmt(nom).padLeft(8)}";
 
     String teks = [
-      centerText(_selectedSpbuKode, AppConfig.lebarKarakter),
-      centerText(_currentSpbu['nama']!, AppConfig.lebarKarakter),
-      centerText(_currentSpbu['alamat']!, AppConfig.lebarKarakter),
+      centerText(_selectedSpbuKode, lebar),
+      centerText(_currentSpbu['nama']!, lebar),
+      centerText(_currentSpbu['alamat']!, lebar),
       "Shift: ${_shiftController.text}   No. Trans: ${_noTransController.text}",
       "Waktu: ${_tanggalController.text} ${_jamController.text}",
       g,
-      padRight("Pulau/Pompa  : ${_pompaController.text}", AppConfig.lebarKarakter),
-      padRight("Operator     : ${_operatorController.text}", AppConfig.lebarKarakter),
-      padRight("Jenis BBM    : ${_jenisController.text}", AppConfig.lebarKarakter),
-      padRight("Volume       : ${vol.toStringAsFixed(2)} liter", AppConfig.lebarKarakter),
+      rowKV("Pulau/Pompa", _pompaController.text),
+      rowKV("Operator", _operatorController.text),
+      rowKV("Jenis BBM", _jenisController.text),
+      rowKV("Volume", "${vol.toStringAsFixed(2)} liter"),
       g,
       "Informasi Harga BBM (Rp/Liter)",
-      padRight("Harga Non Subsidi  : ${fmt(hargaNonSub)}", AppConfig.lebarKarakter),
-      padRight("Subsidi Pemerintah : ${fmt(subLiter)}", AppConfig.lebarKarakter),
-      padRight("Harga Jual         : ${fmt(hargaJual)}", AppConfig.lebarKarakter),
+      rowKV("Harga Non Subsidi", fmt(hargaNonSub)),
+      rowKV("Subsidi Pemerintah", fmt(subLiter)),
+      rowKV("Harga Jual", fmt(hargaJual)),
       g,
       "Total Penjualan (Rp)",
-      padRight("Tanpa Subsidi      : ${fmt(tanpaSub)}", AppConfig.lebarKarakter),
-      padRight("Subsidi Pemerintah : ${fmt(totSub)}", AppConfig.lebarKarakter),
-      padRight("Dibayar Konsumen   : ${fmt(nom)}", AppConfig.lebarKarakter),
+      rowKV("Tanpa Subsidi", fmt(tanpaSub)),
+      rowKV("Subsidi Pemerintah", fmt(totSub)),
+      rowRight("Dibayar Konsumen", fmt(nom), lebar),
       g,
-      cashLine,
+      rowRight("CASH", fmt(nom), lebar),
       g,
       "Anda mendapat subsidi dari",
       "Pemerintah sebesar Rp ${fmt(totSub)}",
@@ -568,16 +621,21 @@ class _BbmScreenState extends State<BbmScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => PreviewDialog(teks: teks, namaFile: "bon_${_noTransController.text}.txt", pakaiLogo: true),
+      builder: (context) => PreviewDialog(
+        teks: teks,
+        namaFile: "bon_${_noTransController.text}.txt",
+        pakaiLogo: true,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(appBar: AppBar(title: const Text('Input Data Bon BBM')), body: const Center(child: CircularProgressIndicator()));
+      return Scaffold(
+          appBar: AppBar(title: const Text('Input Data Bon BBM')),
+          body: const Center(child: CircularProgressIndicator()));
     }
-
     return Scaffold(
       appBar: AppBar(title: const Text('Input Data Bon BBM')),
       body: SingleChildScrollView(
@@ -591,23 +649,39 @@ class _BbmScreenState extends State<BbmScreen> {
                   child: DropdownButtonFormField<String>(
                     value: _selectedSpbuKode,
                     decoration: const InputDecoration(labelText: 'Pilih SPBU', border: OutlineInputBorder()),
-                    items: _daftarSpbu.map((s) => DropdownMenuItem(value: s['kode'], child: Text("${s['kode']} - ${s['nama']}", overflow: TextOverflow.ellipsis))).toList(),
+                    items: _daftarSpbu
+                        .map((s) => DropdownMenuItem(
+                            value: s['kode'],
+                            child: Text("${s['kode']} - ${s['nama']}",
+                                overflow: TextOverflow.ellipsis)))
+                        .toList(),
                     onChanged: (val) => setState(() => _selectedSpbuKode = val!),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(icon: const Icon(Icons.access_time), onPressed: _isiWaktuSekarang, tooltip: 'Isi Waktu Sekarang'),
+                IconButton(
+                    icon: const Icon(Icons.access_time),
+                    onPressed: _isiWaktuSekarang,
+                    tooltip: 'Isi Waktu Sekarang'),
               ],
             ),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton.icon(onPressed: _tambahSpbu, icon: const Icon(Icons.add), label: const Text('Tambah SPBU'), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue)),
+                  child: ElevatedButton.icon(
+                      onPressed: _tambahSpbu,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Tambah SPBU'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue)),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: ElevatedButton.icon(onPressed: _hapusSpbu, icon: const Icon(Icons.delete), label: const Text('Hapus SPBU'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red)),
+                  child: ElevatedButton.icon(
+                      onPressed: _hapusSpbu,
+                      icon: const Icon(Icons.delete),
+                      label: const Text('Hapus SPBU'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red)),
                 ),
               ],
             ),
@@ -642,7 +716,7 @@ class _BbmScreenState extends State<BbmScreen> {
   }
 }
 
-// ==================== TOKO SCREEN ====================
+// ==================== TOKO ====================
 class TokoScreen extends StatefulWidget {
   const TokoScreen({super.key});
 
@@ -651,17 +725,16 @@ class TokoScreen extends StatefulWidget {
 }
 
 class _TokoScreenState extends State<TokoScreen> {
-  final _noStrukController = TextEditingController(text: DateTime.now().millisecondsSinceEpoch.toString());
+  final _noStrukController =
+      TextEditingController(text: DateTime.now().millisecondsSinceEpoch.toString());
   final _kasirController = TextEditingController(text: "Admin");
   final _pelangganController = TextEditingController(text: "Umum");
   final _tanggalController = TextEditingController();
   final _jamController = TextEditingController();
-
   final _namaItemController = TextEditingController();
   final _hargaItemController = TextEditingController();
   final _qtyItemController = TextEditingController();
-  final FocusNode _namaItemFocusNode = FocusNode(); // PERBAIKAN: Gunakan FocusNode
-
+  final FocusNode _namaItemFocusNode = FocusNode();
   List<Map<String, dynamic>> _items = [];
 
   @override
@@ -673,43 +746,52 @@ class _TokoScreenState extends State<TokoScreen> {
 
   void _tambahItem() {
     if (_namaItemController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nama barang wajib diisi!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nama barang wajib diisi!')));
       return;
     }
     int harga = int.tryParse(_hargaItemController.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     int qty = int.tryParse(_qtyItemController.text) ?? 0;
     if (harga <= 0 || qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Harga atau Qty tidak valid!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Harga atau Qty tidak valid!')));
       return;
     }
-
     setState(() {
-      _items.add({'nama': _namaItemController.text, 'harga': harga, 'qty': qty, 'subtotal': harga * qty});
+      _items.add({
+        'nama': _namaItemController.text,
+        'harga': harga,
+        'qty': qty,
+        'subtotal': harga * qty
+      });
       _namaItemController.clear();
       _hargaItemController.clear();
       _qtyItemController.clear();
-      _namaItemFocusNode.requestFocus(); // PERBAIKAN: requestFocus pada FocusNode
+      _namaItemFocusNode.requestFocus();
     });
   }
 
-  void _hapusItem(int index) {
-    setState(() => _items.removeAt(index));
-  }
+  void _hapusItem(int index) => setState(() => _items.removeAt(index));
 
   int get _total => _items.fold(0, (sum, item) => sum + (item['subtotal'] as int));
 
-  void _cetakStruk() {
+  Future<void> _cetakStruk() async {
     if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tidak ada item untuk dicetak!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tidak ada item untuk dicetak!')));
       return;
     }
 
-    String g = "-" * AppConfig.lebarKarakter;
+    final prefs = await SharedPreferences.getInstance();
+    final paperWidth = prefs.getInt('paper_width_mm') ?? 80;
+    final lebar = getLebarKarakter(paperWidth);
+    String g = "-" * lebar;
+
     List<String> lines = [
-      centerText(AppConfig.namaToko, AppConfig.lebarKarakter),
-      centerText(AppConfig.alamatToko, AppConfig.lebarKarakter),
-      centerText(AppConfig.kotaToko, AppConfig.lebarKarakter),
-      centerText(AppConfig.telpToko, AppConfig.lebarKarakter),
+      centerText(AppConfig.namaToko, lebar),
+      centerText(AppConfig.alamatToko, lebar),
+      centerText(AppConfig.kotaToko, lebar),
+      centerText(AppConfig.telpToko, lebar),
       "",
       "No.: ${_noStrukController.text}",
       "Ksr : ${_kasirController.text}",
@@ -722,20 +804,28 @@ class _TokoScreenState extends State<TokoScreen> {
       lines.add(it['nama']);
       String hargaStr = "Rp${fmt(it['harga'])} x ${it['qty']}";
       String subStr = "Rp${fmt(it['subtotal'])}";
-      lines.add(hargaStr.padRight(16) + subStr.padLeft(16));
+      lines.add(hargaStr.padRight(16) + subStr.padLeft(lebar - 16));
       lines.add("");
     }
 
-    String totalLine = "${"Total".padRight(18)}${("Rp${fmt(_total)}").padLeft(14)}";
-   
-    lines.addAll([g, totalLine, g, centerText(AppConfig.footerToko[0], AppConfig.lebarKarakter), centerText(AppConfig.footerToko[1], AppConfig.lebarKarakter)]);
+    lines.addAll([
+      g,
+      rowRight("Total", "Rp${fmt(_total)}", lebar),
+      g,
+      centerText(AppConfig.footerToko[0], lebar),
+      centerText(AppConfig.footerToko[1], lebar),
+    ]);
 
     String teks = lines.join('\n');
     showDialog(
       context: context,
-      builder: (context) => PreviewDialog(teks: teks, namaFile: "struk_${_noStrukController.text}.txt", pakaiLogo: false),
+      builder: (context) => PreviewDialog(
+        teks: teks,
+        namaFile: "struk_${_noStrukController.text}.txt",
+        pakaiLogo: false, // Struk Toko TANPA logo
+      ),
     );
-   
+
     setState(() {
       _items.clear();
       _noStrukController.text = DateTime.now().millisecondsSinceEpoch.toString();
@@ -791,7 +881,7 @@ class _TokoScreenState extends State<TokoScreen> {
   }
 }
 
-// ==================== SETTINGS SCREEN ====================
+// ==================== SETTINGS ====================
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -805,11 +895,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isScanning = false;
   bool _enableLogo = true;
 
-  // Variabel untuk section Harga BBM
   List<Map<String, String>> _daftarSpbu = [];
   String _spbuEditKode = "";
   final TextEditingController _hargaEditController = TextEditingController();
   bool _isLoadingSpbu = true;
+
+  int _paperWidth = 80;
+  double _logoScale = 1.0;
 
   @override
   void initState() {
@@ -823,6 +915,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _selectedPrinter = prefs.getString('selected_printer');
       _enableLogo = prefs.getBool('enable_logo') ?? true;
+      _paperWidth = prefs.getInt('paper_width_mm') ?? 80;
+      _logoScale = prefs.getDouble('logo_scale') ?? 1.0;
     });
     _scanPrinters();
   }
@@ -830,7 +924,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadDaftarSpbu() async {
     final prefs = await SharedPreferences.getInstance();
     final savedSpbu = prefs.getStringList('daftar_spbu');
-
     List<Map<String, String>> spbuList;
     if (savedSpbu != null && savedSpbu.isNotEmpty) {
       spbuList = savedSpbu.map((s) {
@@ -840,7 +933,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else {
       spbuList = List<Map<String, String>>.from(AppConfig.defaultDaftarSpbu);
     }
-
     setState(() {
       _daftarSpbu = spbuList;
       if (_daftarSpbu.isNotEmpty) {
@@ -853,6 +945,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _scanPrinters() async {
     setState(() => _isScanning = true);
+    final granted = await PrinterService.ensurePermissions();
+    if (!granted) {
+      if (mounted) {
+        setState(() => _isScanning = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'Izin Bluetooth DITOLAK.\nBuka Setting > Aplikasi > FPN Berkah Abadi > Izin > Bluetooth, lalu coba lagi.')),
+        );
+      }
+      return;
+    }
     try {
       final devices = await PrinterService.getPairedPrinters();
       if (mounted) {
@@ -860,6 +964,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _printers = devices;
           _isScanning = false;
         });
+        if (devices.isEmpty) {
+          _showNoPrinterHelp();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('✓ Ditemukan ${devices.length} printer.')));
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -869,35 +979,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _showNoPrinterHelp() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('🔵 Tidak Ada Printer Terpasang'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Belum ada printer yang di-pairing di Bluetooth HP.\n\n'
+            'Cara pairing iware XS-80BT:\n'
+            '1. Nyalakan printer (tombol power).\n'
+            '2. Buka Setting > Bluetooth di HP.\n'
+            '3. Cari device, ketuk nama printer.\n'
+            '4. Masukkan PIN: 0000 atau 1234.\n'
+            '5. Tunggu status "Terpasang / Paired".\n'
+            '6. Kembali ke aplikasi, tekan "Scan Ulang".\n\n'
+            'Catatan: printer harus "paired", bukan sekadar menyala.',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Tutup')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_printer', _selectedPrinter ?? '');
     await prefs.setBool('enable_logo', _enableLogo);
+    await prefs.setInt('paper_width_mm', _paperWidth);
+    await prefs.setDouble('logo_scale', _logoScale);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pengaturan disimpan!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pengaturan disimpan!')));
     }
   }
 
   Future<void> _testPrint() async {
+    await PrinterService.ensurePermissions();
     if (_selectedPrinter == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pilih printer terlebih dahulu!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pilih printer terlebih dahulu!')));
       return;
     }
     try {
-      bool connected = await PrinterService.connect(_selectedPrinter!);
-      if (!connected) throw Exception('Gagal terhubung ke printer. Pastikan printer menyala.');
-
-      String testText = "TEST PRINT\n" + "=" * 32 + "\n" +
-          "Jika Anda melihat ini,\nprinter berfungsi normal!\n" + "=" * 32 + "\n" +
+      final connected = await PrinterService.connect(_selectedPrinter!);
+      if (!connected) {
+        throw Exception('Gagal terhubung ke printer. Pastikan printer menyala.');
+      }
+      String testText = "TEST PRINT\n" + "=" * getLebarKarakter(_paperWidth) + "\n" +
+          "Jika Anda melihat ini,\nprinter berfungsi normal!\n" +
+          "=" * getLebarKarakter(_paperWidth) + "\n" +
           "Printer: $_selectedPrinter\n" +
           "Waktu: ${nowDateStr()} ${nowTimeStr()}\n";
-
-      bool result = await PrinterService.printText(testText);
+      final result = await PrinterService.printFullJob(
+        textContent: testText,
+        logoBytes: null,
+        includePertaminaHeader: false,
+      );
       await PrinterService.disconnect();
-
       if (mounted) {
         if (result) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Test Print Berhasil!')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Test Print Berhasil!')));
         } else {
           throw Exception('Gagal mengirim data ke printer');
         }
@@ -913,15 +1058,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (kode == null) return;
     setState(() {
       _spbuEditKode = kode;
-      final spbu = _daftarSpbu.firstWhere((s) => s['kode'] == kode, orElse: () => _daftarSpbu.first);
+      final spbu = _daftarSpbu.firstWhere((s) => s['kode'] == kode,
+          orElse: () => _daftarSpbu.first);
       _hargaEditController.text = spbu['harga'] ?? '';
     });
   }
 
   Future<void> _simpanHarga() async {
-    final hargaBaru = _hargaEditController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    final hargaBaru =
+        _hargaEditController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
     if (hargaBaru.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Harga tidak boleh kosong!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Harga tidak boleh kosong!')));
       return;
     }
     for (var spbu in _daftarSpbu) {
@@ -931,13 +1079,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
     final prefs = await SharedPreferences.getInstance();
-    final spbuList = _daftarSpbu.map((s) => '${s['kode']}|${s['nama']}|${s['alamat']}|${s['harga']}').toList();
+    final spbuList = _daftarSpbu
+        .map((s) => '${s['kode']}|${s['nama']}|${s['alamat']}|${s['harga']}')
+        .toList();
     await prefs.setStringList('daftar_spbu', spbuList);
-
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✓ Harga SPBU $_spbuEditKode berhasil diupdate menjadi Rp ${fmt(int.parse(hargaBaru))}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '✓ Harga SPBU $_spbuEditKode diupdate menjadi Rp ${fmt(int.parse(hargaBaru))}')));
     }
   }
 
@@ -951,16 +1100,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. SECTION PRINTER
-              const Text('🖨️ Printer Bluetooth', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text('🖨️ Printer Bluetooth',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 8),
               if (_isScanning)
                 const Center(child: CircularProgressIndicator())
               else
                 DropdownButtonFormField<String>(
                   value: _selectedPrinter,
-                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Pilih Printer'),
-                  items: _printers.map((p) => DropdownMenuItem(value: p.macAdress, child: Text("${p.name} (${p.macAdress})"))).toList(),
+                  decoration: const InputDecoration(
+                      border: OutlineInputBorder(), hintText: 'Pilih Printer'),
+                  items: _printers
+                      .map((p) => DropdownMenuItem(
+                          value: p.macAdress,
+                          child: Text("${p.name} (${p.macAdress})")))
+                      .toList(),
                   onChanged: (val) => setState(() => _selectedPrinter = val),
                 ),
               const SizedBox(height: 16),
@@ -974,14 +1128,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(builder: (context) => const FileHistoryScreen()));
+                  Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const FileHistoryScreen()));
                 },
                 icon: const Icon(Icons.folder_open),
                 label: const Text('📁 Riwayat File (Bon & Struk)'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, padding: const EdgeInsets.all(14)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal, padding: const EdgeInsets.all(14)),
               ),
 
-              // 2. SECTION UPDATE & TUTORIAL (YANG ANDA TANYAKAN)
               const Divider(height: 32),
               Row(
                 children: [
@@ -991,15 +1146,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                         final data = await UpdateService.checkForUpdate();
                         if (mounted) Navigator.pop(context);
-                       
                         if (data['error'] != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(data['error'])));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${data['error']}')));
                         } else if (data['has_update'] == true) {
                           await UpdateService.resetSkipCount();
                           final url = Uri.parse(data['download_url']);
                           if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Aplikasi Anda sudah versi terbaru!')));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('✅ Aplikasi sudah versi terbaru!')));
                         }
                       },
                       icon: const Icon(Icons.system_update),
@@ -1020,26 +1175,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
 
-              // 3. SECTION HARGA BBM
-              const Text('⛽ Harga BBM Non-Subsidi', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Divider(height: 32),
+              const Text('📏 Pengaturan Cetak',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: _paperWidth,
+                decoration: const InputDecoration(
+                    labelText: 'Ukuran Kertas Printer',
+                    border: OutlineInputBorder(),
+                    helperText: 'Mempengaruhi lebar teks dan logo'),
+                items: const [
+                  DropdownMenuItem(value: 58, child: Text('58 mm (Standar Kecil)')),
+                  DropdownMenuItem(value: 80, child: Text('80 mm (iware XS-80BT)')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _paperWidth = val);
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text('Ukuran Logo Cetak:',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              Row(
+                children: [
+                  const Text('Kecil', style: TextStyle(fontSize: 12)),
+                  Expanded(
+                    child: Slider(
+                      value: _logoScale,
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 6,
+                      label: '${_logoScale.toStringAsFixed(1)}x',
+                      onChanged: (val) => setState(() => _logoScale = val),
+                    ),
+                  ),
+                  const Text('Besar', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              const Divider(height: 32),
+              const Text('⛽ Harga BBM Non-Subsidi',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 4),
-              const Text('Atur harga dasar untuk setiap SPBU.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const Text('Atur harga dasar untuk setiap SPBU.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 12),
               if (_isLoadingSpbu)
                 const Center(child: CircularProgressIndicator())
               else ...[
                 DropdownButtonFormField<String>(
                   value: _spbuEditKode,
-                  decoration: const InputDecoration(labelText: 'Pilih SPBU', border: OutlineInputBorder()),
-                  items: _daftarSpbu.map((s) => DropdownMenuItem(value: s['kode'], child: Text("${s['kode']} - ${s['nama']}", overflow: TextOverflow.ellipsis))).toList(),
+                  decoration: const InputDecoration(
+                      labelText: 'Pilih SPBU', border: OutlineInputBorder()),
+                  items: _daftarSpbu
+                      .map((s) => DropdownMenuItem(
+                          value: s['kode'],
+                          child: Text("${s['kode']} - ${s['nama']}",
+                              overflow: TextOverflow.ellipsis)))
+                      .toList(),
                   onChanged: _onSpbuEditChanged,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _hargaEditController,
-                  decoration: const InputDecoration(labelText: 'Harga Non-Subsidi (Rp/Liter)', border: OutlineInputBorder(), prefixText: 'Rp '),
+                  decoration: const InputDecoration(
+                      labelText: 'Harga Non-Subsidi (Rp/Liter)',
+                      border: OutlineInputBorder(),
+                      prefixText: 'Rp '),
                   keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 12),
@@ -1047,27 +1251,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onPressed: _simpanHarga,
                   icon: const Icon(Icons.save),
                   label: const Text('💾 Simpan Harga'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, padding: const EdgeInsets.all(14)),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      padding: const EdgeInsets.all(14)),
                 ),
               ],
 
-              // 4. SECTION LOGO
               const Divider(height: 32),
-              const Text('🖼️ Logo di Struk', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text('🖼️ Logo di Struk',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 8),
               SwitchListTile(
                 title: const Text('Tampilkan Logo'),
-                subtitle: const Text('Logo akan dicetak di bagian atas struk'),
+                subtitle: const Text('Logo dicetak di bagian atas Bon BBM'),
                 value: _enableLogo,
                 onChanged: (val) => setState(() => _enableLogo = val),
               ),
               const SizedBox(height: 16),
 
-              // 5. TOMBOL SIMPAN AKHIR
               ElevatedButton(
                 onPressed: _saveSettings,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(16)),
-                child: const Text('💾 Simpan Pengaturan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue, padding: const EdgeInsets.all(16)),
+                child: const Text('💾 Simpan Pengaturan',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
               ),
             ],
           ),
@@ -1097,20 +1307,28 @@ class PreviewDialog extends StatefulWidget {
 class _PreviewDialogState extends State<PreviewDialog> {
   bool _isPrinting = false;
   bool _enableLogo = true;
-  static const String _logoAsset = 'assets/logo.png';
+  bool _logoExists = true;
 
   @override
   void initState() {
     super.initState();
     _loadLogoSetting();
+    _checkLogoAsset();
   }
 
   Future<void> _loadLogoSetting() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
-      setState(() {
-        _enableLogo = prefs.getBool('enable_logo') ?? true;
-      });
+      setState(() => _enableLogo = prefs.getBool('enable_logo') ?? true);
+    }
+  }
+
+  Future<void> _checkLogoAsset() async {
+    try {
+      await rootBundle.load(AppConfig.logoAsset);
+      if (mounted) setState(() => _logoExists = true);
+    } catch (e) {
+      if (mounted) setState(() => _logoExists = false);
     }
   }
 
@@ -1119,14 +1337,12 @@ class _PreviewDialogState extends State<PreviewDialog> {
       final path = await saveTextToFile(widget.teks, widget.namaFile);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✓ File disimpan di:\n$path')),
-        );
+            SnackBar(content: Text('✓ File disimpan di:\n$path')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan: $e')),
-        );
+            SnackBar(content: Text('Gagal menyimpan: $e')));
       }
     }
   }
@@ -1138,8 +1354,7 @@ class _PreviewDialogState extends State<PreviewDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal bagikan: $e')),
-        );
+            SnackBar(content: Text('Gagal bagikan: $e')));
       }
     }
   }
@@ -1147,49 +1362,53 @@ class _PreviewDialogState extends State<PreviewDialog> {
   Future<void> _cetak() async {
     final prefs = await SharedPreferences.getInstance();
     final printerMac = prefs.getString('selected_printer');
+    final paperWidth = prefs.getInt('paper_width_mm') ?? 80;
+    final logoScale = prefs.getDouble('logo_scale') ?? 1.0;
 
     if (printerMac == null || printerMac.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Printer belum diatur di menu Pengaturan!'),
-        ));
+            content: Text('Printer belum diatur di menu Pengaturan!')));
       }
       return;
     }
 
     setState(() => _isPrinting = true);
     try {
+      final granted = await PrinterService.ensurePermissions();
+      if (!granted) {
+        throw Exception('Izin Bluetooth ditolak. Aktifkan di Setting aplikasi.');
+      }
       final connected = await PrinterService.connect(printerMac);
       if (!connected) {
-        throw Exception(
-          'Gagal terhubung. Pastikan printer menyala & sudah di-pairing di Bluetooth Android.',
-        );
+        throw Exception('Gagal terhubung. Pastikan printer menyala & di-pairing.');
       }
 
-      if (widget.pakaiLogo && _enableLogo) {
+      List<int>? logoBytes;
+      if (widget.pakaiLogo && _enableLogo && _logoExists) {
         try {
-          final byteData = await rootBundle.load(_logoAsset);
-          final logoBytes = await logoBytesToEscPos(
+          final byteData = await rootBundle.load(AppConfig.logoAsset);
+          logoBytes = await logoBytesToEscPos(
             byteData.buffer.asUint8List(),
-            maxWidth: 384,
+            paperWidthMm: paperWidth,
+            logoScale: logoScale,
           );
-          if (logoBytes.isNotEmpty) {
-            await PrinterService.printBytes(logoBytes);
-            await Future.delayed(const Duration(milliseconds: 300));
-          }
         } catch (_) {
-          // Logo gagal? lanjut cetak teks saja.
+          logoBytes = null;
         }
       }
 
-      final result = await PrinterService.printText(widget.teks);
+      final result = await PrinterService.printFullJob(
+        textContent: widget.teks,
+        logoBytes: logoBytes,
+        includePertaminaHeader: widget.pakaiLogo,
+      );
       await PrinterService.disconnect();
 
       if (mounted) {
         if (result) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('✓ Berhasil dicetak ke printer!')),
-          );
+              const SnackBar(content: Text('✓ Berhasil dicetak ke printer!')));
           Navigator.of(context).pop();
         } else {
           throw Exception('Gagal mengirim data ke printer');
@@ -1198,8 +1417,7 @@ class _PreviewDialogState extends State<PreviewDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal Cetak: $e')),
-        );
+            SnackBar(content: Text('Gagal Cetak: $e')));
       }
     } finally {
       if (mounted) setState(() => _isPrinting = false);
@@ -1208,71 +1426,98 @@ class _PreviewDialogState extends State<PreviewDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final showLogo = widget.pakaiLogo && _enableLogo && _logoExists;
     return AlertDialog(
-      title: Text('Preview: ${widget.namaFile}'),
+      title: Row(
+        children: [
+          const Icon(Icons.visibility, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Preview: ${widget.namaFile}',
+                style: const TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              if (widget.pakaiLogo && _enableLogo)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Image.asset(_logoAsset, height: 70),
-                ),
-              Container(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.pakaiLogo)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Tampilkan Logo',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Switch(
+                    value: _enableLogo,
+                    onChanged: (val) {
+                      setState(() => _enableLogo = val);
+                      SharedPreferences.getInstance().then((prefs) {
+                        prefs.setBool('enable_logo', val);
+                      });
+                    },
+                  ),
+                ],
+              ),
+            const Divider(height: 8),
+            Flexible(
+              child: Container(
                 width: double.maxFinite,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.white,
+                  border: Border.all(color: Colors.grey[400]!),
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2)),
+                  ],
                 ),
-                child: Text(
-                  widget.teks,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    height: 1.2,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      if (showLogo) ...[
+                        Image.asset(AppConfig.logoAsset,
+                            height: 60,
+                            fit: BoxFit.contain,
+                            errorBuilder: (c, e, s) => const SizedBox.shrink()),
+                        const SizedBox(height: 4),
+                        Divider(color: Colors.grey[400], thickness: 1),
+                      ],
+                      Text(widget.teks,
+                          style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              height: 1.3,
+                              color: Colors.black87)),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       actions: [
+        TextButton(onPressed: _simpanTxt, child: const Text('💾 Simpan')),
+        TextButton(onPressed: _bagikan, child: const Text('📤 Bagikan')),
         TextButton(
-          onPressed: _simpanTxt,
-          child: const Text('💾 Simpan'),
-        ),
-        TextButton(
-          onPressed: _bagikan,
-          child: const Text('📤 Bagikan'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Tutup'),
-        ),
-        ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(), child: const Text('Tutup')),
+        ElevatedButton.icon(
           onPressed: _isPrinting ? null : _cetak,
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-          child: _isPrinting
+          icon: _isPrinting
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : const Text(
-                  '🖨️ Cetak',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Icon(Icons.print, size: 18),
+          label: Text(_isPrinting ? 'Mencetak...' : '🖨️ Cetak'),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green, foregroundColor: Colors.white),
         ),
       ],
     );

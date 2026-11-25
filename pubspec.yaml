@@ -1,7 +1,7 @@
 name: fpn_berkah_abadi
-description: FPN BERKAH JAYA v3.2.0 Flutter App for Android & iware Thermal Printer
+description: FPN BERKAH ABADI v4.0.0 Flutter App for Android & iware Thermal Printer
 publish_to: 'none'
-version: 3.2.0+2
+version: 4.0.0+4
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -20,6 +20,7 @@ dependencies:
   share_plus: ^9.0.0
   url_launcher: ^6.2.5
   http: ^1.2.1
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
